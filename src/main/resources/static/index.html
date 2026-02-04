@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VaR Calculator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .card { background: white; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #333; margin-bottom: 8px; }
+        h2 { color: #555; font-size: 18px; margin-bottom: 16px; }
+        .subtitle { color: #666; margin-bottom: 24px; }
+        label { display: block; margin-bottom: 8px; color: #555; font-weight: 500; }
+        input, textarea, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; margin-bottom: 16px; }
+        textarea { font-family: monospace; resize: vertical; }
+        button { background: #0066cc; color: white; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; }
+        button:hover { background: #0052a3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .result { background: #f0f8ff; border-left: 4px solid #0066cc; padding: 16px; border-radius: 4px; margin-top: 16px; }
+        .error { background: #fff0f0; border-left: 4px solid #cc0000; padding: 16px; border-radius: 4px; margin-top: 16px; color: #cc0000; }
+        .hidden { display: none; }
+        .info { background: #f9f9f9; padding: 12px; border-radius: 4px; font-size: 13px; color: #666; margin-bottom: 16px; }
+        .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+        .tab { padding: 10px 20px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; transition: all 0.2s; }
+        .tab:hover { background: #0052a3; }
+        .tab.active { background: #003d7a; box-shadow: 0 2px 8px rgba(0,102,204,0.3); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        pre { background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 13px; }
+        .audit-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+        .audit-table th { background: #f5f5f5; padding: 12px; text-align: left; font-weight: 600; border-bottom: 2px solid #ddd; }
+        .audit-table td { padding: 12px; border-bottom: 1px solid #eee; }
+        .audit-table tr:hover { background: #f9f9f9; }
+        .status-success { color: #28a745; font-weight: 500; }
+        .status-error { color: #dc3545; font-weight: 500; }
+        .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+        .badge-admin { background: #ffc107; color: #000; }
+        .badge-user { background: #17a2b8; color: #fff; }
+        .details-btn { background: #6c757d; padding: 6px 12px; font-size: 12px; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }
+        .modal-content { background: white; margin: 50px auto; padding: 24px; max-width: 800px; border-radius: 8px; max-height: 80vh; overflow-y: auto; }
+        .modal-close { float: right; font-size: 28px; font-weight: bold; cursor: pointer; color: #999; }
+        .modal-close:hover { color: #333; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>VaR Calculator</h1>
+            <p class="subtitle">Test Value at Risk calculations using Historical Simulation</p>
+            
+            <div id="loginSection">
+                <h2>Login</h2>
+                <label>Username</label>
+                <input type="text" id="username" value="user" placeholder="Enter username">
+                <label>Password</label>
+                <input type="password" id="password" value="user123" placeholder="Enter password">
+                <button onclick="login()">Login</button>
+                <div id="loginResult"></div>
+            </div>
+
+            <div id="calculatorSection" class="hidden">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2 style="margin: 0;">VaR Calculator <span id="userRole" class="badge"></span></h2>
+                    <button onclick="logout()" style="background: #666;">Logout</button>
+                </div>
+
+                <div class="tabs">
+                    <button class="tab active" onclick="switchTab('trade', event)">Single Trade</button>
+                    <button class="tab" onclick="switchTab('portfolio', event)">Portfolio</button>
+                    <button id="auditTab" class="tab hidden" onclick="switchTab('audit', event)">Audit History</button>
+                </div>
+
+                <div id="tradeTab" class="tab-content active">
+                    <label>Trade ID</label>
+                    <input type="text" id="tradeId" value="TRADE-001" placeholder="e.g., TRADE-001">
+                    
+                    <div style="background: #e8f4f8; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
+                        <label style="margin-bottom: 8px;">📁 Load from Excel/CSV</label>
+                        <input type="file" id="singleTradeFile" accept=".xlsx,.xls,.csv" onchange="loadSingleTradeFile(event)" style="margin-bottom: 8px;">
+                        <div style="font-size: 12px; color: #666;">
+                            Expected format: Column with "PnL" header containing historical values
+                            <br><a href="Sample_Single_Trade_Year.xls" download style="color: #0066cc;">Download Sample File</a>
+                        </div>
+                    </div>
+                    
+                    <label>Historical P&L (comma-separated)</label>
+                    <div class="info">Enter historical profit/loss values. Negative values represent losses.</div>
+                    <textarea id="tradePnL" rows="4" placeholder="e.g., -10,-8,-5,-3,-2,-1,0,1,2,3,4,5...">-10,-8,-5,-3,-2,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25</textarea>
+                    
+                    <label>Confidence Level</label>
+                    <select id="tradeConfidence">
+                        <option value="0.95">95% (Standard)</option>
+                        <option value="0.975">97.5% (Conservative)</option>
+                        <option value="0.99">99% (Regulatory)</option>
+                    </select>
+                    
+                    <div style="display: flex; gap: 8px;">
+                        <button onclick="calculateTradeVaR()" style="flex: 1;">Calculate Trade VaR</button>
+                        <button onclick="resetTrade()" style="flex: 0.3; background: #dc3545;">Reset</button>
+                    </div>
+                </div>
+
+                <div id="portfolioTab" class="tab-content">
+                    <label>Portfolio ID</label>
+                    <input type="text" id="portfolioId" value="PORTFOLIO-001" placeholder="e.g., PORTFOLIO-001">
+                    
+                    <div style="background: #e8f4f8; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
+                        <label style="margin-bottom: 8px;">📁 Load Portfolio from Excel/CSV</label>
+                        <input type="file" id="portfolioFile" accept=".xlsx,.xls,.csv" onchange="loadPortfolioFile(event)" style="margin-bottom: 8px;">
+                        <div style="font-size: 12px; color: #666;">
+                            Expected format: Columns for each trade (e.g., Trade1_EQUITY, Trade2_BOND, Trade3_FX)
+                            <br><a href="Sample_Portfolio_Year.xls" download style="color: #0066cc;">Download Sample (3 trades)</a>
+                            | <a href="Sample_Vectorized_Portfolio.xls" download style="color: #0066cc;">Download Vectorized Sample (5 trades)</a>
+                        </div>
+                    </div>
+                    
+                    <div id="dynamicTradesContainer">
+                        <!-- Dynamic trade inputs will be inserted here -->
+                    </div>
+                    
+                    <div id="staticTradesContainer">
+                        <label>Trade 1 ID</label>
+                        <input type="text" id="trade1Id" value="TRADE-001">
+                        <label>Trade 1 P&L</label>
+                        <textarea id="trade1PnL" rows="3">-10,-8,-5,-3,-2,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25</textarea>
+                        
+                        <label>Trade 2 ID</label>
+                        <input type="text" id="trade2Id" value="TRADE-002">
+                        <label>Trade 2 P&L</label>
+                        <textarea id="trade2PnL" rows="3">5,4,3,2,1,0,-1,-2,-3,-4,-5,-6,-7,-8,-9,-10,-11,-12,-13,-14,-15,-16,-17,-18,-19,-20,-21,-22,-23,-24,-25,-26</textarea>
+                    </div>
+                    
+                    <label>Confidence Level</label>
+                    <select id="portfolioConfidence">
+                        <option value="0.95">95% (Standard)</option>
+                        <option value="0.975">97.5% (Conservative)</option>
+                        <option value="0.99">99% (Regulatory)</option>
+                    </select>
+                    
+                    <div style="display: flex; gap: 8px;">
+                        <button onclick="calculatePortfolioVaR()" style="flex: 1;">Calculate Portfolio VaR</button>
+                        <button onclick="resetPortfolioTrades()" style="flex: 0.3; background: #dc3545;">Reset Trades</button>
+                    </div>
+                </div>
+
+                <div id="auditTabContent" class="tab-content">
+                    <div class="info">View all API requests and their execution details (Admin only)</div>
+                    <button onclick="loadAuditHistory()">Refresh Audit History</button>
+                    <div id="auditResult"></div>
+                </div>
+
+                <div id="calcResult"></div>
+            </div>
+        </div>
+
+        <div id="auditModal" class="modal">
+            <div class="modal-content">
+                <span class="modal-close" onclick="closeModal()">&times;</span>
+                <h2>Request Details</h2>
+                <div id="modalContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let token = null;
+        let userRole = null;
+
+        function switchTab(tab, event) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            if (event && event.target) {
+                event.target.classList.add('active');
+            }
+            
+            // Clear results when switching tabs
+            document.getElementById('calcResult').innerHTML = '';
+            
+            if (tab === 'trade') {
+                document.getElementById('tradeTab').classList.add('active');
+            } else if (tab === 'portfolio') {
+                document.getElementById('portfolioTab').classList.add('active');
+                resetPortfolioInputs();
+            } else if (tab === 'audit') {
+                document.getElementById('auditTabContent').classList.add('active');
+                loadAuditHistory();
+            }
+        }
+
+        function resetPortfolioInputs() {
+            document.getElementById('staticTradesContainer').style.display = 'block';
+            document.getElementById('dynamicTradesContainer').style.display = 'none';
+            document.getElementById('dynamicTradesContainer').innerHTML = '';
+            window.loadedTrades = null;
+        }
+
+        function resetPortfolioTrades() {
+            // Reset to default values
+            document.getElementById('portfolioId').value = 'PORTFOLIO-001';
+            document.getElementById('trade1Id').value = 'TRADE-001';
+            document.getElementById('trade1PnL').value = '-10,-8,-5,-3,-2,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25';
+            document.getElementById('trade2Id').value = 'TRADE-002';
+            document.getElementById('trade2PnL').value = '5,4,3,2,1,0,-1,-2,-3,-4,-5,-6,-7,-8,-9,-10,-11,-12,-13,-14,-15,-16,-17,-18,-19,-20,-21,-22,-23,-24,-25,-26';
+            document.getElementById('portfolioConfidence').value = '0.95';
+            
+            // Clear file input
+            const fileInput = document.getElementById('portfolioFile');
+            if (fileInput) fileInput.value = '';
+            
+            // Reset to static inputs
+            resetPortfolioInputs();
+            
+            // Clear results
+            document.getElementById('calcResult').innerHTML = '<div class="info">✓ Portfolio trades reset to default values</div>';
+        }
+
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            try {
+                const response = await fetch('/api/v1/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    token = data.token;
+                    userRole = data.role;
+                    
+                    document.getElementById('loginSection').classList.add('hidden');
+                    document.getElementById('calculatorSection').classList.remove('hidden');
+                    document.getElementById('loginResult').innerHTML = '';
+                    
+                    // Show role badge
+                    const roleBadge = document.getElementById('userRole');
+                    roleBadge.textContent = data.role;
+                    roleBadge.className = data.role === 'ADMIN' ? 'badge badge-admin' : 'badge badge-user';
+                    
+                    // Handle role-based UI
+                    if (data.role === 'ADMIN') {
+                        // Admin: Show only audit tab, hide trade tabs
+                        document.getElementById('auditTab').classList.remove('hidden');
+                        document.querySelectorAll('.tab')[0].classList.add('hidden'); // Hide Single Trade
+                        document.querySelectorAll('.tab')[1].classList.add('hidden'); // Hide Portfolio
+                        
+                        // Manually activate audit tab
+                        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                        document.getElementById('auditTab').classList.add('active');
+                        document.getElementById('auditTabContent').classList.add('active');
+                        loadAuditHistory();
+                    } else {
+                        // User: Show trade tabs, hide audit tab
+                        document.getElementById('auditTab').classList.add('hidden');
+                        document.querySelectorAll('.tab')[0].classList.remove('hidden');
+                        document.querySelectorAll('.tab')[1].classList.remove('hidden');
+                    }
+                } else {
+                    document.getElementById('loginResult').innerHTML = 
+                        `<div class="error">Login failed: ${data.message || 'Invalid credentials'}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('loginResult').innerHTML = 
+                    `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        function logout() {
+            token = null;
+            userRole = null;
+            document.getElementById('loginSection').classList.remove('hidden');
+            document.getElementById('calculatorSection').classList.add('hidden');
+            document.getElementById('calcResult').innerHTML = '';
+            document.getElementById('auditTab').classList.add('hidden');
+            document.getElementById('auditResult').innerHTML = '';
+        }
+
+        function resetTrade() {
+            document.getElementById('tradeId').value = 'TRADE-001';
+            document.getElementById('tradePnL').value = '-10,-8,-5,-3,-2,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25';
+            document.getElementById('tradeConfidence').value = '0.95';
+            
+            const fileInput = document.getElementById('singleTradeFile');
+            if (fileInput) fileInput.value = '';
+            
+            document.getElementById('calcResult').innerHTML = '<div class="info">✓ Trade inputs reset to default values</div>';
+        }
+
+        async function calculateTradeVaR() {
+            const tradeId = document.getElementById('tradeId').value;
+            const pnlStr = document.getElementById('tradePnL').value;
+            const confidence = parseFloat(document.getElementById('tradeConfidence').value);
+            
+            let historicalPnL = pnlStr.split(',').map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
+            
+            if (historicalPnL.length < 2) {
+                document.getElementById('calcResult').innerHTML = 
+                    '<div class="error">Please provide at least 2 historical P&L values</div>';
+                return;
+            }
+            
+            // Auto-sort data from lowest to highest
+            const originalData = [...historicalPnL];
+            historicalPnL.sort((a, b) => a - b);
+            
+            // Update textarea with sorted data
+            document.getElementById('tradePnL').value = historicalPnL.join(',');
+            
+            // Check if data was sorted
+            const wasSorted = JSON.stringify(originalData) !== JSON.stringify(historicalPnL);
+            
+            document.getElementById('calcResult').innerHTML = 
+                `<div class="info">Calculating...${wasSorted ? ' (data sorted)' : ''}</div>`;
+            
+            try {
+                const response = await fetch('/api/v1/var/trade', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ tradeId, historicalPnL, confidenceLevel: confidence })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const resultHtml = `
+                        <div class="result">
+                            <h3 style="margin-bottom: 12px;">VaR Calculation Result</h3>
+                            <div style="background: #f5f5f5; padding: 16px; border-radius: 4px; margin-bottom: 12px;">
+                                <p style="margin: 4px 0;"><strong>Trade ID:</strong> ${data.id || tradeId}</p>
+                                <p style="margin: 4px 0;"><strong>VaR:</strong> $${data.var.toFixed(2)} AUD</p>
+                                <p style="margin: 4px 0;"><strong>Confidence Level:</strong> ${(data.confidenceLevel * 100)}%</p>
+                                <p style="margin: 4px 0;"><strong>Method:</strong> ${data.calculationMethod}</p>
+                                <p style="margin: 4px 0;"><strong>Timestamp:</strong> ${new Date(data.timestamp).toLocaleString()}</p>
+                            </div>
+                            <p style="margin-top: 12px; color: #555;">
+                                <strong>Interpretation:</strong> At ${(confidence * 100)}% confidence level, 
+                                there's a ${((1 - confidence) * 100)}% chance of losing $${data.var.toFixed(2)} AUD or more.
+                            </p>
+                            <details style="margin-top: 12px;">
+                                <summary style="cursor: pointer; color: #0066cc;">View Raw JSON</summary>
+                                <pre style="margin-top: 8px;">${JSON.stringify(data, null, 2)}</pre>
+                            </details>
+                        </div>`;
+                    
+                    document.getElementById('calcResult').innerHTML = resultHtml;
+                } else {
+                    document.getElementById('calcResult').innerHTML = 
+                        `<div class="error">Error: ${data.message || data.error || 'Calculation failed'}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('calcResult').innerHTML = 
+                    `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function calculatePortfolioVaR() {
+            const portfolioId = document.getElementById('portfolioId').value;
+            const confidence = parseFloat(document.getElementById('portfolioConfidence').value);
+            
+            let trades = [];
+            let sortedCount = 0;
+            
+            // Check if using dynamic trades (from file upload)
+            if (window.loadedTrades && window.loadedTrades.length > 0) {
+                trades = window.loadedTrades.map((trade, index) => {
+                    // Get current values from textarea (in case user edited)
+                    const textarea = document.getElementById(`dynamicTrade${index}`);
+                    let pnlData = textarea ? 
+                        textarea.value.split(',').map(v => parseFloat(v.trim())).filter(v => !isNaN(v)) :
+                        trade.data;
+                    
+                    // Check if sorting needed
+                    const original = [...pnlData];
+                    
+                    // Auto-sort data
+                    pnlData.sort((a, b) => a - b);
+                    
+                    if (JSON.stringify(original) !== JSON.stringify(pnlData)) {
+                        sortedCount++;
+                    }
+                    
+                    // Update textarea with sorted data
+                    if (textarea) {
+                        textarea.value = pnlData.join(',');
+                    }
+                    
+                    return {
+                        tradeId: trade.id,
+                        historicalPnL: pnlData
+                    };
+                });
+            } else {
+                // Use static inputs
+                const trade1Id = document.getElementById('trade1Id').value;
+                let trade1PnL = document.getElementById('trade1PnL').value
+                    .split(',').map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
+                
+                const trade2Id = document.getElementById('trade2Id').value;
+                let trade2PnL = document.getElementById('trade2PnL').value
+                    .split(',').map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
+                
+                if (trade1PnL.length < 2 || trade2PnL.length < 2) {
+                    document.getElementById('calcResult').innerHTML = 
+                        '<div class="error">Each trade must have at least 2 historical P&L values</div>';
+                    return;
+                }
+                
+                // Check if sorting needed
+                const orig1 = [...trade1PnL];
+                const orig2 = [...trade2PnL];
+                
+                // Auto-sort both trades
+                trade1PnL.sort((a, b) => a - b);
+                trade2PnL.sort((a, b) => a - b);
+                
+                if (JSON.stringify(orig1) !== JSON.stringify(trade1PnL)) sortedCount++;
+                if (JSON.stringify(orig2) !== JSON.stringify(trade2PnL)) sortedCount++;
+                
+                // Update textareas with sorted data
+                document.getElementById('trade1PnL').value = trade1PnL.join(',');
+                document.getElementById('trade2PnL').value = trade2PnL.join(',');
+                
+                trades = [
+                    { tradeId: trade1Id, historicalPnL: trade1PnL },
+                    { tradeId: trade2Id, historicalPnL: trade2PnL }
+                ];
+            }
+            
+            document.getElementById('calcResult').innerHTML = 
+                `<div class="info">Calculating...${sortedCount > 0 ? ` (${sortedCount} trade(s) sorted)` : ''}</div>`;
+            
+            try {
+                const response = await fetch('/api/v1/var/portfolio', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        portfolioId,
+                        confidenceLevel: confidence,
+                        trades: trades
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const resultHtml = `
+                        <div class="result">
+                            <h3 style="margin-bottom: 12px;">Portfolio VaR Result</h3>
+                            <div style="background: #f5f5f5; padding: 16px; border-radius: 4px; margin-bottom: 12px;">
+                                <p style="margin: 4px 0;"><strong>Portfolio ID:</strong> ${data.id || portfolioId}</p>
+                                <p style="margin: 4px 0;"><strong>VaR:</strong> $${data.var.toFixed(2)} AUD</p>
+                                <p style="margin: 4px 0;"><strong>Confidence Level:</strong> ${(data.confidenceLevel * 100)}%</p>
+                                <p style="margin: 4px 0;"><strong>Method:</strong> ${data.calculationMethod}</p>
+                                <p style="margin: 4px 0;"><strong>Number of Trades:</strong> ${data.tradeCount}</p>
+                                <p style="margin: 4px 0;"><strong>Timestamp:</strong> ${new Date(data.timestamp).toLocaleString()}</p>
+                            </div>
+                            <p style="margin-top: 12px; color: #555;">
+                                <strong>Interpretation:</strong> At ${(confidence * 100)}% confidence level, 
+                                there's a ${((1 - confidence) * 100)}% chance of losing $${data.var.toFixed(2)} AUD or more.
+                                Portfolio VaR is typically less than the sum of individual VaRs due to diversification.
+                            </p>
+                            <details style="margin-top: 12px;">
+                                <summary style="cursor: pointer; color: #0066cc;">View Raw JSON</summary>
+                                <pre style="margin-top: 8px;">${JSON.stringify(data, null, 2)}</pre>
+                            </details>
+                        </div>`;
+                    
+                    document.getElementById('calcResult').innerHTML = resultHtml;
+                } else {
+                    document.getElementById('calcResult').innerHTML = 
+                        `<div class="error">Error: ${data.message || data.error || 'Calculation failed'}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('calcResult').innerHTML = 
+                    `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function loadAuditHistory() {
+            if (userRole !== 'ADMIN') {
+                document.getElementById('auditResult').innerHTML = 
+                    '<div class="error">Access denied. Admin role required.</div>';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/v1/audit/history', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.length > 0) {
+                    let tableHtml = `
+                        <table class="audit-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>User</th>
+                                    <th>Endpoint</th>
+                                    <th>Status</th>
+                                    <th>Time (ms)</th>
+                                    <th>Timestamp</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>`;
+                    
+                    data.forEach(record => {
+                        const statusClass = record.status === 'SUCCESS' ? 'status-success' : 'status-error';
+                        const timestamp = new Date(record.timestamp).toLocaleString();
+                        
+                        tableHtml += `
+                            <tr>
+                                <td>${record.id}</td>
+                                <td>${record.userId}</td>
+                                <td>${record.endpoint}</td>
+                                <td class="${statusClass}">${record.status}</td>
+                                <td>${record.executionTimeMs}</td>
+                                <td>${timestamp}</td>
+                                <td>
+                                    <button class="details-btn" onclick='showDetails(${JSON.stringify(record)})'>
+                                        View Details
+                                    </button>
+                                </td>
+                            </tr>`;
+                    });
+                    
+                    tableHtml += '</tbody></table>';
+                    document.getElementById('auditResult').innerHTML = tableHtml;
+                } else if (response.ok && data.length === 0) {
+                    document.getElementById('auditResult').innerHTML = 
+                        '<div class="info">No audit records found.</div>';
+                } else {
+                    document.getElementById('auditResult').innerHTML = 
+                        `<div class="error">Error loading audit history: ${data.message || 'Unknown error'}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('auditResult').innerHTML = 
+                    `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        function showDetails(record) {
+            let detailsHtml = `
+                <p><strong>ID:</strong> ${record.id}</p>
+                <p><strong>User:</strong> ${record.userId}</p>
+                <p><strong>Endpoint:</strong> ${record.endpoint}</p>
+                <p><strong>Status:</strong> ${record.status}</p>
+                <p><strong>Execution Time:</strong> ${record.executionTimeMs} ms</p>
+                <p><strong>Timestamp:</strong> ${new Date(record.timestamp).toLocaleString()}</p>
+            `;
+            
+            if (record.requestPayload) {
+                detailsHtml += `
+                    <h3 style="margin-top: 16px;">Request Payload</h3>
+                    <pre>${JSON.stringify(JSON.parse(record.requestPayload), null, 2)}</pre>
+                `;
+            }
+            
+            if (record.responsePayload) {
+                detailsHtml += `
+                    <h3 style="margin-top: 16px;">Response Payload</h3>
+                    <pre>${JSON.stringify(JSON.parse(record.responsePayload), null, 2)}</pre>
+                `;
+            }
+            
+            if (record.errorMessage) {
+                detailsHtml += `
+                    <h3 style="margin-top: 16px;">Error Message</h3>
+                    <div class="error">${record.errorMessage}</div>
+                `;
+            }
+            
+            document.getElementById('modalContent').innerHTML = detailsHtml;
+            document.getElementById('auditModal').style.display = 'block';
+        }
+
+        function closeModal() {
+            document.getElementById('auditModal').style.display = 'none';
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('auditModal');
+            if (event.target === modal) {
+                modal.style.display = 'none';
+            }
+        }
+
+        // File upload handlers
+        function loadSingleTradeFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+                    
+                    // Check number of numeric columns (excluding Day)
+                    const allColumns = Object.keys(jsonData[0]);
+                    const numericColumns = allColumns.filter(colName => {
+                        const lowerCol = colName.toLowerCase();
+                        if (lowerCol === 'day') return false;
+                        const firstValue = jsonData[0][colName];
+                        return typeof firstValue === 'number' && !isNaN(firstValue);
+                    });
+                    
+                    // Validation: Single trade should have only 1 numeric column
+                    if (numericColumns.length > 1) {
+                        document.getElementById('calcResult').innerHTML = 
+                            `<div class="error">
+                                ❌ Validation Error: This file contains ${numericColumns.length} trade columns (${numericColumns.join(', ')}).
+                                <br>Single Trade upload requires exactly 1 trade column.
+                                <br><strong>Please use the Portfolio tab for multi-trade files.</strong>
+                            </div>`;
+                        event.target.value = ''; // Clear file input
+                        return;
+                    }
+                    
+                    if (numericColumns.length === 0) {
+                        alert('No PnL data found in file. Please check the format.');
+                        return;
+                    }
+                    
+                    // Extract PnL column
+                    const pnlColumn = numericColumns[0];
+                    const pnlValues = jsonData.map(row => row[pnlColumn]).filter(v => typeof v === 'number' && !isNaN(v));
+                    
+                    if (pnlValues.length === 0) {
+                        alert('No valid PnL data found in file.');
+                        return;
+                    }
+                    
+                    // Sort the data in ascending order (worst losses first)
+                    const sortedPnL = [...pnlValues].sort((a, b) => a - b);
+                    
+                    // Update the textarea with sorted data
+                    document.getElementById('tradePnL').value = sortedPnL.join(',');
+                    
+                    // Show success message
+                    document.getElementById('calcResult').innerHTML = 
+                        `<div class="result">
+                            ✓ Loaded ${pnlValues.length} data points from column "${pnlColumn}"
+                            <br><small style="color: #666;">Data has been sorted (worst losses first) for display.</small>
+                        </div>`;
+                    
+                } catch (error) {
+                    alert('Error reading file: ' + error.message);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function loadPortfolioFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+                    
+                    if (jsonData.length === 0) {
+                        alert('No data found in file.');
+                        return;
+                    }
+                    
+                    // Get all column names from the first row
+                    const allColumns = Object.keys(jsonData[0]);
+                    console.log('All columns found:', allColumns);
+                    
+                    // Filter out 'Day' column and keep only numeric columns
+                    const tradeColumns = allColumns.filter(colName => {
+                        const lowerCol = colName.toLowerCase();
+                        if (lowerCol === 'day') return false;
+                        const firstValue = jsonData[0][colName];
+                        return typeof firstValue === 'number' && !isNaN(firstValue);
+                    });
+                    
+                    console.log('Trade columns found:', tradeColumns);
+                    
+                    if (tradeColumns.length < 2) {
+                        alert(`Portfolio file must have at least 2 trade columns. Found: ${tradeColumns.join(', ')}`);
+                        return;
+                    }
+                    
+                    // Hide static container, show dynamic container
+                    document.getElementById('staticTradesContainer').style.display = 'none';
+                    const dynamicContainer = document.getElementById('dynamicTradesContainer');
+                    dynamicContainer.style.display = 'block';
+                    dynamicContainer.innerHTML = ''; // Clear previous content
+                    
+                    // Store trade data for calculation
+                    window.loadedTrades = [];
+                    
+                    // Create dynamic inputs for each trade
+                    tradeColumns.forEach((colName, index) => {
+                        const tradeData = jsonData.map(row => row[colName]).filter(v => typeof v === 'number' && !isNaN(v));
+                        const sortedData = [...tradeData].sort((a, b) => a - b);
+                        
+                        // Store for later use
+                        window.loadedTrades.push({
+                            id: colName,
+                            data: sortedData
+                        });
+                        
+                        // Create UI elements
+                        const tradeDiv = document.createElement('div');
+                        tradeDiv.style.marginBottom = '16px';
+                        tradeDiv.style.padding = '12px';
+                        tradeDiv.style.background = '#f9f9f9';
+                        tradeDiv.style.borderRadius = '4px';
+                        tradeDiv.innerHTML = `
+                            <label style="font-weight: 600; color: #333;">Trade ${index + 1}: ${colName}</label>
+                            <div style="font-size: 12px; color: #666; margin-bottom: 8px;">
+                                ${tradeData.length} data points (sorted, worst losses first)
+                            </div>
+                            <textarea id="dynamicTrade${index}" rows="2" style="width: 100%; font-size: 11px; font-family: monospace;">${sortedData.join(',')}</textarea>
+                        `;
+                        dynamicContainer.appendChild(tradeDiv);
+                    });
+                    
+                    // Show success message
+                    document.getElementById('calcResult').innerHTML = 
+                        `<div class="result">
+                            ✓ Loaded ${tradeColumns.length} trades from vectorized file
+                            <br><small style="color: #666;">All trades displayed below with sorted data (worst losses first).</small>
+                        </div>`;
+                    
+                } catch (error) {
+                    console.error('Error details:', error);
+                    alert('Error reading file: ' + error.message);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+    </script>
+</body>
+</html>
