@@ -1,486 +1,478 @@
-# VaR Calculation Service - Design Document
+# VaR Calculation Service Design
 
-## 1. System Architecture
+## System Architecture
 
-### 1.1 High-Level Architecture
+The VaR Calculation Service uses a layered architecture with clear separation of concerns:
 
-The VaR Calculation Service follows a layered architecture pattern with clear separation of concerns:
+### High-Level Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Presentation Layer                       │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────┐ │
-│  │  VarController  │  │ AuthController  │  │AuditController│ │
-│  └─────────────────┘  └─────────────────┘  └─────────────┘ │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    Client Applications                          │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
+│  │   Web Browser   │  │  Mobile App     │  │  API Client     │ │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
                                 │
-┌─────────────────────────────────────────────────────────────┐
-│                     Service Layer                          │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────┐ │
-│  │VarCalculationSvc│  │UserDetailsImpl  │  │ AuditService│ │
-│  └─────────────────┘  └─────────────────┘  └─────────────┘ │
-└─────────────────────────────────────────────────────────────┘
+                         HTTPS/REST API
                                 │
-┌─────────────────────────────────────────────────────────────┐
-│                   Strategy Layer                           │
-│  ┌─────────────────────────────────────────────────────────┐ │
-│  │        HistoricalSimulationStrategy                     │ │
-│  └─────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                  Presentation Layer                             │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
+│  │  VarController  │  │ AuthController  │  │AuditController  │ │
+│  │  /api/v1/var    │  │ /api/v1/auth    │  │ /api/v1/audit   │ │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
                                 │
-┌─────────────────────────────────────────────────────────────┐
-│                  Persistence Layer                         │
-│  ┌─────────────────┐  ┌─────────────────┐                  │
-│  │  UserRepository │  │AuditRecordRepo  │                  │
-│  └─────────────────┘  └─────────────────┘                  │
-└─────────────────────────────────────────────────────────────┘
+                        JWT Authentication
                                 │
-┌─────────────────────────────────────────────────────────────┐
-│                     Data Layer                             │
-│  ┌─────────────────────────────────────────────────────────┐ │
-│  │                H2 In-Memory Database                    │ │
-│  └─────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    Security Layer                               │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
+│  │JwtAuthFilter    │  │JwtTokenProvider │  │  SecurityConfig │ │
+│  │(Validation)     │  │(Token Gen)      │  │  (RBAC)         │ │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                        Business Logic
+                                │
+┌─────────────────────────────────────────────────────────────────┐
+│                    Service Layer                                │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
+│  │VarCalculation   │  │UserDetailsImpl  │  │  AuditService   │ │
+│  │Service          │  │(Authentication) │  │  (Compliance)   │ │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                        Algorithm Layer
+                                │
+┌─────────────────────────────────────────────────────────────────┐
+│                   Strategy Layer                                │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │           HistoricalSimulationStrategy                      │ │
+│  │  • calculateTradeVaR()                                      │ │
+│  │  • calculatePortfolioVaR()                                  │ │
+│  │  • validateInput()                                          │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                        Data Access
+                                │
+┌─────────────────────────────────────────────────────────────────┐
+│                   Data Access Layer                             │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
+│  │  UserRepository │  │AuditRecordRepo  │  │   Cache Layer   │ │
+│  │  (JPA/Hibernate)│  │  (JPA/Hibernate)│  │   (Caffeine)    │ │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                        Data Storage
+                                │
+┌─────────────────────────────────────────────────────────────────┐
+│                    Data Layer                                   │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                H2 Database (Development)                    │ │
+│  │              PostgreSQL (Production)                        │ │
+│  │  • Users Table                                              │ │
+│  │  • Audit Records Table                                      │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 1.2 Component Responsibilities
+### Component Architecture
 
-**Controllers (Presentation Layer)**
-- Handle HTTP requests/responses
-- Perform input validation
-- Extract authentication context
-- Delegate business logic to services
+**Presentation Layer**
+- VarController handles VaR calculation requests
+- AuthController manages user authentication  
+- AuditController provides audit data access
 
-**Services (Business Layer)**
-- Orchestrate business operations
-- Manage transactions and caching
-- Handle cross-cutting concerns (audit, logging)
-- Coordinate between strategies and repositories
+**Service Layer**
+- VarCalculationService orchestrates business operations
+- UserDetailsServiceImpl handles user authentication
+- AuditService manages compliance logging
 
-**Strategies (Algorithm Layer)**
-- Implement VaR calculation algorithms
-- Encapsulate mathematical computations
-- Provide pluggable calculation methods
+**Strategy Layer**
+- HistoricalSimulationStrategy implements VaR calculations
+- Pluggable design allows for future calculation methods
 
-**Repositories (Data Access Layer)**
-- Abstract database operations
-- Provide CRUD operations for entities
-- Handle query optimization
+**Data Layer**
+- UserRepository manages user data
+- AuditRecordRepository handles audit logging
+- H2 in-memory database for development
 
-## 2. Security Design
+## Security Design
 
-### 2.1 Authentication Flow
+### Security Architecture Diagram
 
 ```
-Client                    AuthController              JwtTokenProvider
-  │                            │                            │
-  │ POST /auth/login          │                            │
-  │ {username, password}      │                            │
-  │──────────────────────────▶│                            │
-  │                            │ validateCredentials()      │
-  │                            │──────────────────────────▶ │
-  │                            │                            │
-  │                            │ generateToken()            │
-  │                            │──────────────────────────▶ │
-  │                            │ ◀──────────────────────────│
-  │ ◀──────────────────────────│ JWT Token                  │
-  │                            │                            │
+┌─────────────────────────────────────────────────────────────────┐
+│                    Client Request                               │
+│  POST /api/v1/var/trade                                         │
+│  Authorization: Bearer <JWT-TOKEN>                              │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                JWT Authentication Filter                        │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │  1. Extract JWT token from Authorization header            │ │
+│  │  2. Validate token signature and expiration                │ │
+│  │  3. Extract username and role from token claims            │ │
+│  │  4. Set SecurityContext with authenticated user            │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                 Role-Based Authorization                        │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │  • /api/v1/var/** → Requires USER role                     │ │
+│  │  • /api/v1/audit/** → Requires ADMIN role                  │ │
+│  │  • /api/v1/auth/** → Public access                         │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Controller Layer                             │
+│  Process request with authenticated user context                │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 Authorization Flow
+### Authentication Flow
+
+Users login with username/password to receive JWT tokens. The AuthController validates credentials and generates tokens using JwtTokenProvider. Tokens are valid for 24 hours by default.
+
+### Authorization Flow
+
+All requests include JWT tokens in Authorization header. JwtAuthenticationFilter validates tokens and sets security context. Controllers check user roles before processing requests.
+
+### Security Configuration
+
+JWT tokens use 256-bit secret keys with HS512 signing. Passwords are encrypted with BCrypt strength 12. CORS is configured for development and CSRF is disabled for stateless API design.
+
+## VaR Calculation Design
+
+### VaR Calculation Flow Diagram
 
 ```
-Client                 JwtAuthFilter              SecurityContext
-  │                         │                           │
-  │ GET /api/v1/var/trade  │                           │
-  │ Authorization: Bearer   │                           │
-  │──────────────────────▶ │                           │
-  │                         │ validateToken()           │
-  │                         │─────────────────────────▶ │
-  │                         │ ◀─────────────────────────│
-  │                         │ setAuthentication()       │
-  │                         │─────────────────────────▶ │
-  │                         │                           │
-  │ ◀──────────────────────│ Continue to Controller    │
+┌─────────────────────────────────────────────────────────────────┐
+│                    VaR Calculation Request                      │
+│  TradeVarRequest or PortfolioVarRequest                         │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   VarCalculationService                         │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │  1. Check cache for existing result                        │ │
+│  │  2. If cache miss, delegate to strategy                    │ │
+│  │  3. Log audit record (start time)                          │ │
+│  │  4. Cache result before returning                          │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              HistoricalSimulationStrategy                       │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │  Trade VaR:                                                 │ │
+│  │  1. Validate input (min data points, confidence level)     │ │
+│  │  2. Sort historical P&L in ascending order                 │ │
+│  │  3. Calculate percentile position                          │ │
+│  │  4. Apply linear interpolation if needed                   │ │
+│  │  5. Return absolute VaR value                              │ │
+│  │                                                             │ │
+│  │  Portfolio VaR:                                             │ │
+│  │  1. Validate all trades have same periods                  │ │
+│  │  2. Aggregate P&L across trades for each period           │ │
+│  │  3. Apply Trade VaR algorithm to aggregated data          │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      VaR Response                               │
+│  • Calculated VaR value                                         │
+│  • Confidence level                                             │
+│  • Calculation method (HISTORICAL_SIMULATION)                   │
+│  • Trade count                                                  │
+│  • Timestamp                                                    │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.3 Security Configuration
-
-- **JWT Secret**: 256-bit key for token signing
-- **Token Expiration**: 24 hours (configurable)
-- **Password Encoding**: BCrypt with strength 12
-- **CORS**: Configured for development (all origins)
-- **CSRF**: Disabled for stateless API
-
-## 3. VaR Calculation Design
-
-### 3.1 Historical Simulation Algorithm
+### Historical Simulation Algorithm
 
 The Historical Simulation method uses actual historical P&L data to estimate potential losses:
 
-```java
-Algorithm: Historical Simulation VaR
-Input: historicalPnL[], confidenceLevel
-Output: VaR value
-
-1. Validate inputs:
-   - historicalPnL not null/empty
-   - size >= minDataPoints (configurable)
-   - 0 < confidenceLevel < 1
-
+1. Validate inputs - check P&L data exists, has minimum data points, and confidence level is between 0 and 1
 2. Sort P&L data in ascending order
-
-3. Calculate percentile position:
-   percentile = 1 - confidenceLevel
-   position = percentile × (n - 1)
-
-4. Handle interpolation:
-   lower = floor(position)
-   upper = ceil(position)
-   
-   if (lower == upper):
-       VaR = sortedPnL[lower]
-   else:
-       fraction = position - lower
-       VaR = interpolate(sortedPnL[lower], sortedPnL[upper], fraction)
-
+3. Calculate percentile position as (1 - confidence level) × (n - 1)
+4. Handle interpolation between data points if needed
 5. Return absolute value of VaR
-```
 
-### 3.2 Portfolio VaR Calculation
+### Portfolio VaR Calculation
 
 Portfolio VaR aggregates individual trade P&L before applying Historical Simulation:
 
-```java
-Algorithm: Portfolio VaR
-Input: List<List<Double>> tradesPnL, confidenceLevel
-Output: Portfolio VaR
-
 1. Validate all trades have same number of periods
+2. Sum P&L across all trades for each time period
+3. Apply Historical Simulation to aggregated P&L
+4. Return portfolio VaR value
 
-2. Aggregate P&L across trades for each period:
-   for each period i:
-       portfolioPnL[i] = sum(trade[j].pnl[i] for all trades j)
+### Caching Strategy
 
-3. Apply Historical Simulation to aggregated P&L:
-   return calculateTradeVaR(portfolioPnL, confidenceLevel)
-```
+Cache keys use trade ID or portfolio ID combined with confidence level. Caffeine provides in-memory caching with 1-hour TTL and 1000 entry maximum. LRU eviction removes oldest entries when cache is full.
 
-### 3.3 Caching Strategy
+## Data Model Design
 
-**Cache Keys:**
-- Trade VaR: `{tradeId}_{confidenceLevel}`
-- Portfolio VaR: `{portfolioId}_{confidenceLevel}`
-
-**Cache Configuration:**
-- Provider: Caffeine (in-memory)
-- TTL: 1 hour (configurable)
-- Max Size: 1000 entries per cache
-- Eviction: LRU (Least Recently Used)
-
-## 4. Data Model Design
-
-### 4.1 Entity Relationship Diagram
+### Entity Relationship Diagram
 
 ```
-┌─────────────────┐         ┌─────────────────┐
-│      User       │         │   AuditRecord   │
-├─────────────────┤         ├─────────────────┤
-│ id (Long) PK    │         │ id (Long) PK    │
-│ username        │    1    │ username        │
-│ password        │ ────────│ endpoint        │
-│ role (Enum)     │    *    │ executionTime   │
-│ enabled         │         │ success         │
-│ createdAt       │         │ errorMessage    │
-│ updatedAt       │         │ timestamp       │
-└─────────────────┘         └─────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        Data Model                               │
+│                                                                 │
+│  ┌─────────────────┐         ┌─────────────────┐               │
+│  │      User       │         │   AuditRecord   │               │
+│  ├─────────────────┤         ├─────────────────┤               │
+│  │ id (PK)         │    1    │ id (PK)         │               │
+│  │ username        │ ────────│ username        │               │
+│  │ password        │    *    │ endpoint        │               │
+│  │ role (Enum)     │         │ executionTime   │               │
+│  │ enabled         │         │ success         │               │
+│  │ createdAt       │         │ errorMessage    │               │
+│  │ updatedAt       │         │ timestamp       │               │
+│  └─────────────────┘         └─────────────────┘               │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    DTO Structure                            │ │
+│  │                                                             │ │
+│  │  TradeVarRequest          PortfolioVarRequest               │ │
+│  │  ├─ tradeId               ├─ portfolioId                    │ │
+│  │  ├─ historicalPnL         ├─ confidenceLevel                │ │
+│  │  └─ confidenceLevel       └─ trades[]                       │ │
+│  │                                │                            │ │
+│  │  Trade                         │                            │ │
+│  │  ├─ tradeId                    │                            │ │
+│  │  └─ historicalPnL ─────────────┘                            │ │
+│  │                                                             │ │
+│  │  VarResponse                                                │ │
+│  │  ├─ id                                                      │ │
+│  │  ├─ var                                                     │ │
+│  │  ├─ confidenceLevel                                         │ │
+│  │  ├─ calculationMethod                                       │ │
+│  │  ├─ tradeCount                                              │ │
+│  │  └─ timestamp                                               │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 4.2 DTO Design (Java 21 Records)
+### User Entity
+- id (Long primary key)
+- username (unique string)
+- password (BCrypt encrypted)
+- role (USER or ADMIN enum)
+- enabled flag
+- created and updated timestamps
 
-**Request DTOs:**
-```java
-// Immutable request objects using records
-public record TradeVarRequest(
-    String tradeId,
-    List<Double> historicalPnL,
-    Double confidenceLevel
-) {}
+### AuditRecord Entity
+- id (Long primary key)
+- username
+- endpoint path
+- execution time in milliseconds
+- success boolean flag
+- error message (optional)
+- timestamp
 
-public record PortfolioVarRequest(
-    String portfolioId,
-    Double confidenceLevel,
-    List<Trade> trades
-) {}
-```
+### Request/Response DTOs
 
-**Response DTOs:**
-```java
-public record VarResponse(
-    String id,
-    Double var,
-    Double confidenceLevel,
-    String calculationMethod,
-    Integer tradeCount,
-    LocalDateTime timestamp
-) {}
-```
+Java 21 records provide immutable data transfer objects:
 
-## 5. Performance Design
+TradeVarRequest contains trade ID, historical P&L list, and confidence level.
+PortfolioVarRequest contains portfolio ID, confidence level, and list of trades.
+VarResponse contains calculated VaR, confidence level, method, trade count, and timestamp.
 
-### 5.1 Virtual Threads (Java 21)
+## Performance Design
 
-The application leverages Virtual Threads for improved concurrency:
-
-```yaml
-# Configuration
-spring:
-  threads:
-    virtual:
-      enabled: true
-
-server:
-  tomcat:
-    threads:
-      max: 200  # Virtual threads scale much higher
-      min-spare: 10
-```
-
-**Benefits:**
-- Lightweight thread creation (millions possible)
-- Reduced memory footprint per thread
-- Better resource utilization for I/O-bound operations
-- Simplified concurrent programming model
-
-### 5.2 Caching Architecture
+### Performance Architecture Diagram
 
 ```
-Request → Controller → Service → Cache Check
-                                     │
-                              Cache Hit? ──Yes──→ Return Cached Result
-                                     │
-                                    No
-                                     │
-                              Strategy Calculation
-                                     │
-                              Cache Result → Return Result
+┌─────────────────────────────────────────────────────────────────┐
+│                    Performance Layers                          │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                 Java 21 Virtual Threads                    │ │
+│  │  • Lightweight thread creation (millions possible)         │ │
+│  │  • Reduced memory footprint per thread                     │ │
+│  │  • Better resource utilization for I/O operations         │ │
+│  │  • Tomcat: max=200, min-spare=10                          │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                                │                                │
+│                                ▼                                │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                   Caching Layer                             │ │
+│  │                                                             │ │
+│  │  Request → Cache Check → Cache Hit? ──Yes──→ Return Result │ │
+│  │                │              │                             │ │
+│  │                │             No                             │ │
+│  │                │              │                             │ │
+│  │                ▼              ▼                             │ │
+│  │         Strategy Calculation                                │ │
+│  │                │                                            │ │
+│  │                ▼                                            │ │
+│  │         Cache Result → Return Result                        │ │
+│  │                                                             │ │
+│  │  Cache Configuration:                                       │ │
+│  │  • Provider: Caffeine (in-memory)                          │ │
+│  │  • TTL: 1 hour                                             │ │
+│  │  • Max Size: 1000 entries                                  │ │
+│  │  • Eviction: LRU                                           │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                                │                                │
+│                                ▼                                │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                Database Connection Pool                     │ │
+│  │  • HikariCP for connection pooling                         │ │
+│  │  • Optimized connection lifecycle                          │ │
+│  │  • Connection leak detection                               │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 5.3 Performance Optimizations
+### Virtual Threads
 
-- **Stream API**: Efficient data processing with parallel streams where applicable
-- **Method-level Caching**: `@Cacheable` annotations on service methods
-- **Lazy Loading**: JPA entities configured for optimal loading strategies
-- **Connection Pooling**: HikariCP for database connections
+Java 21 Virtual Threads enable lightweight concurrency. Spring Boot configuration enables virtual threads for web requests. Tomcat is configured for 200 maximum threads with 10 minimum spare threads.
 
-## 6. Error Handling Design
+Benefits include lightweight thread creation, reduced memory usage, better resource utilization for I/O operations, and simplified concurrent programming.
 
-### 6.1 Exception Hierarchy
+### Caching Architecture
 
-```
-RuntimeException
-├── IllegalArgumentException (400 Bad Request)
-├── SecurityException (401/403)
-├── CalculationException (422 Unprocessable Entity)
-└── SystemException (500 Internal Server Error)
-```
+Requests check cache before calculation. Cache hits return stored results immediately. Cache misses trigger calculation, store results, then return values. Method-level caching uses Spring annotations.
 
-### 6.2 Global Exception Handler
+### Performance Optimizations
 
-```java
-@RestControllerAdvice
-public class GlobalExceptionHandler {
-    
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ErrorResponse> handleValidation(Exception e) {
-        return ResponseEntity.badRequest()
-            .body(new ErrorResponse("VALIDATION_ERROR", e.getMessage()));
-    }
-    
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleGeneral(Exception e) {
-        // Log error, return generic message
-        return ResponseEntity.internalServerError()
-            .body(new ErrorResponse("INTERNAL_ERROR", "Calculation failed"));
-    }
-}
-```
+Stream API provides efficient data processing. Method-level caching reduces duplicate calculations. JPA entities use optimal loading strategies. HikariCP manages database connection pooling.
 
-## 7. Configuration Design
+## Error Handling Design
 
-### 7.1 Application Properties Structure
+### Exception Hierarchy
 
-```yaml
-# Server Configuration
-server:
-  port: 9001
-  tomcat.threads: {...}
+IllegalArgumentException maps to 400 Bad Request for validation errors. SecurityException maps to 401/403 for authentication issues. CalculationException maps to 422 for business logic failures. Generic exceptions map to 500 Internal Server Error.
 
-# Spring Configuration  
-spring:
-  application.name: var-calculation-service
-  datasource: {...}
-  jpa: {...}
-  threads.virtual.enabled: true
+### Global Exception Handler
 
-# Custom Configuration
-jwt:
-  secret: ${JWT_SECRET:default-secret}
-  expiration: ${JWT_EXPIRATION:86400000}
+RestControllerAdvice provides centralized error handling. Specific handlers catch different exception types. Generic handler catches unexpected errors. All responses use consistent ErrorResponse format.
 
-var:
-  calculation:
-    min-data-points: ${MIN_DATA_POINTS:5}
-    cache:
-      ttl: ${CACHE_TTL:3600}
-      max-size: ${CACHE_MAX_SIZE:1000}
-```
+## Configuration Design
 
-### 7.2 Configuration Classes
+### Application Properties
 
-```java
-@ConfigurationProperties(prefix = "var.calculation")
-@Data
-public class VarCalculationProperties {
-    private int minDataPoints = 5;
-    private Cache cache = new Cache();
-    
-    @Data
-    public static class Cache {
-        private long ttl = 3600;
-        private int maxSize = 1000;
-    }
-}
-```
+Server configuration includes port 9001 and Tomcat thread settings. Spring configuration covers application name, datasource, JPA, and virtual threads. Custom configuration includes JWT settings and VaR calculation parameters.
 
-## 8. Testing Strategy
+### Configuration Classes
 
-### 8.1 Test Pyramid
+VarCalculationProperties uses ConfigurationProperties annotation for type-safe configuration. Properties include minimum data points and cache settings with default values.
+
+## Testing Strategy
+
+### Test Categories
+
+Unit tests cover VaR calculation algorithms, input validation, and utility functions. Integration tests verify controller endpoints, database operations, and security configuration. Property-based tests validate mathematical properties and boundary conditions.
+
+### Testing Approach
+
+Tests verify algorithm correctness with known datasets. Input validation tests check boundary conditions. Security tests verify authentication and authorization. Performance tests measure response times under load.
+
+## Monitoring and Observability
+
+### Actuator Endpoints
+
+Health endpoint shows application status. Info endpoint provides application metadata. Metrics endpoint exposes performance data. All endpoints support JSON format.
+
+### Logging Strategy
+
+Structured logging uses correlation IDs for request tracking. Log levels include DEBUG for development and INFO for production. MDC provides request context in log messages.
+
+### Metrics Collection
+
+Key metrics include request/response times, cache hit ratios, error rates by endpoint, active user sessions, and database connection pool status.
+
+## Deployment Architecture
+
+### Deployment Architecture Diagram
 
 ```
-                    ┌─────────────────┐
-                    │   E2E Tests     │ ← Few, high-value scenarios
-                    │   (Integration) │
-                    └─────────────────┘
-                  ┌───────────────────────┐
-                  │    Service Tests      │ ← Business logic validation
-                  │   (Unit + Mock)       │
-                  └───────────────────────┘
-              ┌─────────────────────────────────┐
-              │        Unit Tests               │ ← Algorithm correctness
-              │   (Strategy, Validation)        │
-              └─────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    Development Environment                      │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                Docker Container                             │ │
+│  │  ┌─────────────────────────────────────────────────────────┐ │ │
+│  │  │            VaR Application                              │ │ │
+│  │  │  • OpenJDK 21 JRE Slim                                 │ │ │
+│  │  │  • Non-root user (appuser)                             │ │ │
+│  │  │  • Health checks enabled                               │ │ │
+│  │  │  • Port 9001 exposed                                   │ │ │
+│  │  └─────────────────────────────────────────────────────────┘ │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                                │                                │
+│                                ▼                                │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                H2 In-Memory Database                        │ │
+│  │  • Development and testing                                  │ │
+│  │  • Auto-creates tables on startup                          │ │
+│  │  • H2 console available at /h2-console                     │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                   Production Environment                        │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                 Load Balancer                               │ │
+│  │  • HTTPS termination                                        │ │
+│  │  • SSL certificates                                         │ │
+│  │  • Health check routing                                     │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                                │                                │
+│                                ▼                                │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │              Container Orchestration                        │ │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │ │
+│  │  │ Container 1 │  │ Container 2 │  │ Container 3 │         │ │
+│  │  │ VaR App     │  │ VaR App     │  │ VaR App     │         │ │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘         │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                                │                                │
+│                                ▼                                │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                External Services                            │ │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │ │
+│  │  │ PostgreSQL  │  │ Redis Cache │  │ Secrets     │         │ │
+│  │  │ Database    │  │ (Distributed)│  │ Manager     │         │ │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘         │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 8.2 Test Categories
+### Container Design
 
-**Unit Tests:**
-- VaR calculation algorithms
-- Input validation logic
-- Utility functions
-- DTO serialization
+Multi-stage Dockerfile reduces image size. Runtime image uses OpenJDK 21 JRE slim base. Non-root user improves security. Health checks enable container orchestration.
 
-**Integration Tests:**
-- Controller endpoints
-- Database operations
-- Security configuration
-- Cache behavior
+### Environment Configuration
 
-**Property-Based Tests:**
-- VaR calculation properties
-- Input boundary conditions
-- Mathematical invariants
+Development uses H2 in-memory database with debug logging. Production uses external database with info-level logging. Environment variables configure database connections and JWT secrets.
 
-## 9. Monitoring & Observability
+## Future Considerations
 
-### 9.1 Actuator Endpoints
+### Microservices Evolution
 
-```yaml
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics,prometheus
-  endpoint:
-    health:
-      show-details: always
-```
+Current monolithic design can split into separate services for calculations, user management, audit logging, and API gateway routing.
 
-### 9.2 Logging Strategy
+### Scalability Enhancements
 
-```java
-// Structured logging with correlation IDs
-@Slf4j
-public class VarCalculationService {
-    
-    public VarResponse calculateTradeVaR(TradeVarRequest request, String username) {
-        MDC.put("tradeId", request.tradeId());
-        MDC.put("username", username);
-        
-        log.info("Starting VaR calculation for trade: {}", request.tradeId());
-        // ... calculation logic
-        log.info("VaR calculation completed in {}ms", duration);
-    }
-}
-```
+Future improvements include distributed caching with Redis, message queues for async processing, load balancing across instances, and database sharding for audit data.
 
-### 9.3 Metrics Collection
+### Technology Upgrades
 
-- Request/response times
-- Cache hit ratios
-- Error rates by endpoint
-- Active user sessions
-- Database connection pool metrics
-
-## 10. Deployment Architecture
-
-### 10.1 Container Design
-
-```dockerfile
-FROM openjdk:21-jdk-slim
-COPY target/var-calculation-*.jar app.jar
-EXPOSE 9001
-ENTRYPOINT ["java", "-jar", "/app.jar"]
-```
-
-### 10.2 Environment Configuration
-
-**Development:**
-- H2 in-memory database
-- Debug logging enabled
-- Swagger UI accessible
-- CORS permissive
-
-**Production:**
-- External database (PostgreSQL/Oracle)
-- Info-level logging
-- Swagger UI disabled
-- CORS restricted
-- Health checks configured
-- Resource limits applied
-
-## 11. Future Architecture Considerations
-
-### 11.1 Microservices Evolution
-
-Current monolithic design can evolve to:
-- **Calculation Service**: Core VaR algorithms
-- **User Service**: Authentication/authorization
-- **Audit Service**: Compliance logging
-- **Gateway Service**: API routing and rate limiting
-
-### 11.2 Scalability Enhancements
-
-- **Distributed Caching**: Redis cluster
-- **Message Queues**: Async calculation processing
-- **Load Balancing**: Multiple service instances
-- **Database Sharding**: Partition audit data by date
-- **CDN Integration**: Static content delivery
-
-### 11.3 Technology Upgrades
-
-- **GraalVM**: Native image compilation
-- **Reactive Streams**: Non-blocking I/O with WebFlux
-- **GraphQL**: Flexible API queries
-- **Event Sourcing**: Audit trail as event stream
-- **CQRS**: Separate read/write models
+Potential upgrades include GraalVM native compilation, reactive streams with WebFlux, GraphQL for flexible queries, event sourcing for audit trails, and CQRS for read/write separation.

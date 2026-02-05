@@ -1,22 +1,22 @@
-# VaR Calculation Service - API Specification
+# VaR Calculation Service API
 
-## 1. API Overview
+## Overview
 
-The VaR Calculation Service provides RESTful APIs for calculating Value at Risk using Historical Simulation methodology. All endpoints except authentication require JWT bearer token authorization.
+The VaR Calculation Service provides REST APIs for calculating Value at Risk using Historical Simulation. All endpoints except authentication require JWT bearer tokens.
 
-**Base URL:** `http://localhost:9001/api/v1`  
-**Content-Type:** `application/json`  
-**Authentication:** JWT Bearer Token  
+Base URL: http://localhost:9001/api/v1
+Content-Type: application/json
+Authentication: JWT Bearer Token
 
-## 2. Authentication Endpoints
+## Authentication
 
-### 2.1 User Login
+### User Login
 
-**Endpoint:** `POST /auth/login`  
-**Description:** Authenticate user and receive JWT token  
-**Authentication:** None required  
+POST /auth/login
 
-**Request Body:**
+Authenticate user and receive JWT token. No authentication required.
+
+Request:
 ```json
 {
   "username": "string",
@@ -24,7 +24,7 @@ The VaR Calculation Service provides RESTful APIs for calculating Value at Risk 
 }
 ```
 
-**Response (200 OK):**
+Response (200 OK):
 ```json
 {
   "token": "eyJhbGciOiJIUzUxMiJ9...",
@@ -34,29 +34,29 @@ The VaR Calculation Service provides RESTful APIs for calculating Value at Risk 
 }
 ```
 
-**Error Responses:**
-- `401 Unauthorized`: Invalid credentials
-- `400 Bad Request`: Missing username/password
+Error Responses:
+- 401 Unauthorized: Invalid credentials
+- 400 Bad Request: Missing username/password
 
-**Default Users:**
-- Username: `user`, Password: `user123`, Role: `USER`
-- Username: `admin`, Password: `admin123`, Role: `ADMIN`
+Default Users:
+- Username: user, Password: user123, Role: USER
+- Username: admin, Password: admin123, Role: ADMIN
 
-## 3. VaR Calculation Endpoints
+## VaR Calculations
 
-### 3.1 Calculate Trade VaR
+### Calculate Trade VaR
 
-**Endpoint:** `POST /var/trade`  
-**Description:** Calculate VaR for a single trade using historical P&L data  
-**Authentication:** Required (USER or ADMIN)  
+POST /var/trade
 
-**Request Headers:**
+Calculate VaR for a single trade using historical P&L data. Requires USER or ADMIN role.
+
+Headers:
 ```
 Authorization: Bearer <jwt-token>
 Content-Type: application/json
 ```
 
-**Request Body:**
+Request:
 ```json
 {
   "tradeId": "TRADE-001",
@@ -65,12 +65,12 @@ Content-Type: application/json
 }
 ```
 
-**Request Validation:**
-- `tradeId`: Required, non-blank string
-- `historicalPnL`: Required, minimum 5 data points (configurable)
-- `confidenceLevel`: Required, between 0.0 and 1.0 (exclusive)
+Validation:
+- tradeId: Required, non-blank string
+- historicalPnL: Required, minimum 5 data points
+- confidenceLevel: Required, between 0.0 and 1.0
 
-**Response (200 OK):**
+Response (200 OK):
 ```json
 {
   "id": "TRADE-001",
@@ -82,24 +82,24 @@ Content-Type: application/json
 }
 ```
 
-**Error Responses:**
-- `400 Bad Request`: Invalid input parameters
-- `401 Unauthorized`: Missing or invalid JWT token
-- `422 Unprocessable Entity`: Insufficient data points
+Error Responses:
+- 400 Bad Request: Invalid input parameters
+- 401 Unauthorized: Missing or invalid JWT token
+- 422 Unprocessable Entity: Insufficient data points
 
-### 3.2 Calculate Portfolio VaR
+### Calculate Portfolio VaR
 
-**Endpoint:** `POST /var/portfolio`  
-**Description:** Calculate VaR for a portfolio containing multiple trades  
-**Authentication:** Required (USER or ADMIN)  
+POST /var/portfolio
 
-**Request Headers:**
+Calculate VaR for a portfolio containing multiple trades. Requires USER or ADMIN role.
+
+Headers:
 ```
 Authorization: Bearer <jwt-token>
 Content-Type: application/json
 ```
 
-**Request Body:**
+Request:
 ```json
 {
   "portfolioId": "PORTFOLIO-001",
@@ -117,14 +117,14 @@ Content-Type: application/json
 }
 ```
 
-**Request Validation:**
-- `portfolioId`: Required, non-blank string
-- `confidenceLevel`: Required, between 0.0 and 1.0 (exclusive)
-- `trades`: Required, minimum 1 trade
-- All trades must have same number of historical data points
-- Each trade's `historicalPnL` must meet minimum data points requirement
+Validation:
+- portfolioId: Required, non-blank string
+- confidenceLevel: Required, between 0.0 and 1.0
+- trades: Required, minimum 1 trade
+- All trades must have same number of data points
+- Each trade must meet minimum data points requirement
 
-**Response (200 OK):**
+Response (200 OK):
 ```json
 {
   "id": "PORTFOLIO-001",
@@ -136,31 +136,31 @@ Content-Type: application/json
 }
 ```
 
-**Error Responses:**
-- `400 Bad Request`: Invalid input parameters
-- `401 Unauthorized`: Missing or invalid JWT token
-- `422 Unprocessable Entity`: Mismatched data points across trades
+Error Responses:
+- 400 Bad Request: Invalid input parameters
+- 401 Unauthorized: Missing or invalid JWT token
+- 422 Unprocessable Entity: Mismatched data points across trades
 
-## 4. Audit Endpoints
+## Audit
 
-### 4.1 Get Audit Records
+### Get Audit Records
 
-**Endpoint:** `GET /audit`  
-**Description:** Retrieve audit records for all calculation requests  
-**Authentication:** Required (ADMIN only)  
+GET /audit
 
-**Request Headers:**
+Retrieve audit records for all calculation requests. Requires ADMIN role only.
+
+Headers:
 ```
 Authorization: Bearer <jwt-token>
 ```
 
-**Query Parameters:**
-- `page`: Page number (default: 0)
-- `size`: Page size (default: 20)
-- `username`: Filter by username (optional)
-- `success`: Filter by success status (optional)
+Query Parameters:
+- page: Page number (default: 0)
+- size: Page size (default: 20)
+- username: Filter by username (optional)
+- success: Filter by success status (optional)
 
-**Response (200 OK):**
+Response (200 OK):
 ```json
 {
   "content": [
@@ -183,19 +183,19 @@ Authorization: Bearer <jwt-token>
 }
 ```
 
-**Error Responses:**
-- `401 Unauthorized`: Missing or invalid JWT token
-- `403 Forbidden`: Insufficient privileges (USER role)
+Error Responses:
+- 401 Unauthorized: Missing or invalid JWT token
+- 403 Forbidden: Insufficient privileges (USER role)
 
-## 5. Health & Monitoring Endpoints
+## Health and Monitoring
 
-### 5.1 Health Check
+### Health Check
 
-**Endpoint:** `GET /actuator/health`  
-**Description:** Application health status  
-**Authentication:** None required  
+GET /actuator/health
 
-**Response (200 OK):**
+Application health status. No authentication required.
+
+Response (200 OK):
 ```json
 {
   "status": "UP",
@@ -220,13 +220,13 @@ Authorization: Bearer <jwt-token>
 }
 ```
 
-### 5.2 Application Info
+### Application Info
 
-**Endpoint:** `GET /actuator/info`  
-**Description:** Application metadata  
-**Authentication:** None required  
+GET /actuator/info
 
-**Response (200 OK):**
+Application metadata. No authentication required.
+
+Response (200 OK):
 ```json
 {
   "app": {
@@ -240,9 +240,9 @@ Authorization: Bearer <jwt-token>
 }
 ```
 
-## 6. Error Response Format
+## Error Response Format
 
-All error responses follow a consistent format:
+All error responses follow consistent format:
 
 ```json
 {
@@ -254,67 +254,46 @@ All error responses follow a consistent format:
 }
 ```
 
-**Common HTTP Status Codes:**
-- `200 OK`: Successful operation
-- `400 Bad Request`: Invalid request parameters
-- `401 Unauthorized`: Authentication required
-- `403 Forbidden`: Insufficient permissions
-- `404 Not Found`: Resource not found
-- `422 Unprocessable Entity`: Business logic validation failed
-- `500 Internal Server Error`: Unexpected server error
+Common HTTP Status Codes:
+- 200 OK: Successful operation
+- 400 Bad Request: Invalid request parameters
+- 401 Unauthorized: Authentication required
+- 403 Forbidden: Insufficient permissions
+- 404 Not Found: Resource not found
+- 422 Unprocessable Entity: Business logic validation failed
+- 500 Internal Server Error: Unexpected server error
 
-## 7. Rate Limiting
+## Caching
 
-Currently no rate limiting is implemented. Future versions may include:
-- Per-user request limits
-- IP-based throttling
-- Calculation complexity limits
-
-## 8. Caching Behavior
-
-**Cache Strategy:**
-- Trade VaR results cached by `{tradeId}_{confidenceLevel}`
-- Portfolio VaR results cached by `{portfolioId}_{confidenceLevel}`
-- Cache TTL: 1 hour (configurable)
+Cache Strategy:
+- Trade VaR results cached by trade ID and confidence level
+- Portfolio VaR results cached by portfolio ID and confidence level
+- Cache TTL: 1 hour
 - Cache invalidation: LRU eviction
 
-**Cache Headers:**
-- No explicit cache headers in responses
-- Caching is transparent to clients
+Caching is transparent to clients with no explicit cache headers in responses.
 
-## 9. API Versioning
+## API Documentation
 
-**Current Version:** v1  
-**Versioning Strategy:** URL path versioning (`/api/v1/`)  
-**Backward Compatibility:** Maintained within major versions  
+Interactive Documentation: http://localhost:9001/swagger-ui.html
+OpenAPI Spec: http://localhost:9001/api-docs
 
-## 10. OpenAPI Documentation
+The Swagger UI provides interactive API testing, request/response examples, schema documentation, and authentication testing.
 
-**Interactive Documentation:** `http://localhost:9001/swagger-ui.html`  
-**OpenAPI Spec:** `http://localhost:9001/api-docs`  
+## Sample Requests
 
-The Swagger UI provides:
-- Interactive API testing
-- Request/response examples
-- Schema documentation
-- Authentication testing
-
-## 11. Sample Requests
-
-### 11.1 Complete Trade VaR Flow
+### Complete Trade VaR Flow
 
 ```bash
-# 1. Login
+# Login
 curl -X POST http://localhost:9001/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username": "user", "password": "user123"}'
 
-# Response: {"token": "eyJ...", "type": "Bearer", ...}
-
-# 2. Calculate Trade VaR
+# Calculate Trade VaR
 curl -X POST http://localhost:9001/api/v1/var/trade \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer eyJ..." \
+  -H "Authorization: Bearer <token>" \
   -d '{
     "tradeId": "TRADE-001",
     "historicalPnL": [-1500, 2300, -800, 1200, -2100, 900, -600],
@@ -322,13 +301,13 @@ curl -X POST http://localhost:9001/api/v1/var/trade \
   }'
 ```
 
-### 11.2 Complete Portfolio VaR Flow
+### Complete Portfolio VaR Flow
 
 ```bash
 # Calculate Portfolio VaR
 curl -X POST http://localhost:9001/api/v1/var/portfolio \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer eyJ..." \
+  -H "Authorization: Bearer <token>" \
   -d '{
     "portfolioId": "PORTFOLIO-001",
     "confidenceLevel": 0.99,
@@ -345,20 +324,11 @@ curl -X POST http://localhost:9001/api/v1/var/portfolio \
   }'
 ```
 
-## 12. Client SDK Considerations
+## Testing Data
 
-For client applications, consider:
-- **Token Management**: Automatic token refresh before expiration
-- **Error Handling**: Retry logic for transient failures
-- **Request Validation**: Client-side validation before API calls
-- **Caching**: Client-side caching of calculation results
-- **Logging**: Request/response logging for debugging
+Sample Excel files are available for testing:
+- http://localhost:9001/Sample_Single_Trade_Year.xls
+- http://localhost:9001/Sample_Portfolio_Year.xls
+- http://localhost:9001/Sample_Vectorized_Portfolio.xls
 
-## 13. Testing Endpoints
-
-For development and testing, sample Excel files are available:
-- `http://localhost:9001/Sample_Single_Trade_Year.xls`
-- `http://localhost:9001/Sample_Portfolio_Year.xls`
-- `http://localhost:9001/Sample_Vectorized_Portfolio.xls`
-
-These files contain sample historical P&L data that can be used for testing the API endpoints.
+These files contain sample historical P&L data for testing API endpoints.

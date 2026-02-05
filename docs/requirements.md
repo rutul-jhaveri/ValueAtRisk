@@ -1,161 +1,96 @@
-# VaR Calculation Service - Requirements Document
+# VaR Calculation Service Requirements
 
-## 1. Overview
+## Overview
 
-The VaR (Value at Risk) Calculation Service is a financial risk management system that estimates potential losses in trading positions using historical simulation methodology. The service provides RESTful APIs for calculating VaR at specified confidence levels for both individual trades and diversified portfolios.
+The VaR Calculation Service estimates potential financial losses in trading positions using historical simulation. It provides REST APIs for calculating Value at Risk at specified confidence levels for individual trades and portfolios.
 
-## 2. Business Objectives
+## Business Goals
 
-- Provide accurate VaR calculations using historical P&L data
-- Support risk assessment for single trades and multi-trade portfolios
-- Enable secure, role-based access to calculation services
-- Maintain audit trails for regulatory compliance
-- Deliver high-performance calculations using modern Java capabilities
+- Calculate accurate VaR using historical profit and loss data
+- Support risk assessment for single trades and portfolios
+- Provide secure access with user authentication
+- Maintain audit trails for compliance
+- Deliver fast calculations using modern Java features
 
-## 3. Functional Requirements
+## Functional Requirements
 
-### 3.1 VaR Calculation
+### VaR Calculations
 
-**FR-1: Single Trade VaR Calculation**
-- System shall calculate VaR for individual trades using historical P&L data
-- System shall accept confidence levels between 0 and 1 (e.g., 0.95 for 95%)
-- System shall require minimum configurable data points (default: 5)
-- System shall use Historical Simulation methodology with linear interpolation
-- System shall return absolute VaR value with calculation metadata
+The system must calculate VaR for individual trades using historical P&L data. It should accept confidence levels between 0 and 1 (like 0.95 for 95% confidence). The system needs at least 5 data points by default but this should be configurable. It will use Historical Simulation with linear interpolation and return the absolute VaR value.
 
-**FR-2: Portfolio VaR Calculation**
-- System shall calculate aggregated VaR for portfolios containing multiple trades
-- System shall aggregate P&L across all trades for each historical period
-- System shall validate that all trades have identical number of data points
-- System shall support natural diversification effects in portfolio calculations
-- System shall require at least one trade in portfolio
+For portfolios, the system must calculate aggregated VaR for multiple trades. It should combine P&L across all trades for each time period and validate that all trades have the same number of data points. The system must support natural diversification effects and require at least one trade per portfolio.
 
-**FR-3: Calculation Methodology**
-- System shall implement Historical Simulation strategy
-- System shall sort historical P&L data in ascending order
-- System shall calculate percentile position: (1 - confidence level) × (n - 1)
-- System shall use linear interpolation for non-integer percentile positions
-- System shall return VaR as absolute value
+The calculation method will sort historical P&L data in ascending order, calculate percentile position as (1 - confidence level) × (n - 1), and use linear interpolation for non-integer positions.
 
-### 3.2 Authentication & Authorization
+### Authentication and Authorization
 
-**FR-4: User Authentication**
-- System shall authenticate users via JWT tokens
-- System shall support username/password login
-- System shall issue tokens with configurable expiration (default: 24 hours)
-- System shall validate tokens on all protected endpoints
+Users must authenticate with JWT tokens through username and password login. The system will issue tokens with 24-hour expiration by default. All protected endpoints require valid tokens.
 
-**FR-5: Role-Based Access Control**
-- System shall support USER and ADMIN roles
-- System shall restrict VaR calculation endpoints to authenticated users
-- System shall restrict audit endpoints to ADMIN role only
-- System shall initialize default users (user/user123, admin/admin123)
+The system supports USER and ADMIN roles. VaR calculation endpoints are available to authenticated users. Audit endpoints are restricted to ADMIN role only. Default users are user/user123 and admin/admin123.
 
-### 3.3 Audit & Compliance
+### Audit and Compliance
 
-**FR-6: Audit Logging**
-- System shall log all VaR calculation requests
-- System shall capture: username, endpoint, execution time, success/failure status
-- System shall store error messages for failed calculations
-- System shall persist audit records to database
-- System shall provide audit query endpoints for administrators
+All VaR calculation requests must be logged including username, endpoint, execution time, and success status. Error messages are stored for failed calculations. Audit records are persisted to database with query endpoints for administrators.
 
-### 3.4 Performance & Caching
+### Performance and Caching
 
-**FR-7: Caching Strategy**
-- System shall cache trade VaR results by tradeId and confidence level
-- System shall cache portfolio VaR results by portfolioId and confidence level
-- System shall use in-memory caching (Caffeine)
-- System shall configure cache TTL and size limits
+Trade VaR results are cached by trade ID and confidence level. Portfolio VaR results are cached by portfolio ID and confidence level. The system uses in-memory caching with configurable TTL and size limits.
 
-**FR-8: Concurrent Processing**
-- System shall leverage Java 21 Virtual Threads for request handling
-- System shall support configurable thread pool sizing
-- System shall handle concurrent calculation requests efficiently
+The application uses Java 21 Virtual Threads for request handling with configurable thread pool sizing to handle concurrent requests efficiently.
 
-### 3.5 API & Documentation
+### API and Documentation
 
-**FR-9: RESTful API**
-- System shall expose REST endpoints under /api/v1 namespace
-- System shall validate all request payloads
-- System shall return standardized error responses
-- System shall support JSON request/response format
+REST endpoints are exposed under /api/v1 namespace with JSON request/response format. All request payloads are validated with standardized error responses. OpenAPI/Swagger documentation is provided with interactive UI at /swagger-ui.html.
 
-**FR-10: API Documentation**
-- System shall provide OpenAPI/Swagger documentation
-- System shall expose interactive API UI at /swagger-ui.html
-- System shall document all endpoints, parameters, and response schemas
+## Non-Functional Requirements
 
-## 4. Non-Functional Requirements
+### Performance
+- VaR calculations complete within 500ms for up to 1000 data points
+- System supports minimum 100 concurrent users  
+- Cache hit ratio exceeds 70% for repeated calculations
 
-### 4.1 Performance
-- **NFR-1:** VaR calculations shall complete within 500ms for datasets up to 1000 points
-- **NFR-2:** System shall support minimum 100 concurrent users
-- **NFR-3:** Cache hit ratio shall exceed 70% for repeated calculations
+### Security
+- All API endpoints require authentication except login
+- JWT tokens use secure HS512 signing algorithm
+- Passwords stored with BCrypt hashing
+- System prevents SQL injection and XSS attacks
 
-### 4.2 Security
-- **NFR-4:** All API endpoints shall require authentication except /auth/login
-- **NFR-5:** JWT tokens shall use secure signing algorithm (HS512)
-- **NFR-6:** Passwords shall be stored using BCrypt hashing
-- **NFR-7:** System shall prevent SQL injection and XSS attacks
+### Reliability
+- Input data validation before processing
+- Graceful error handling for calculation failures
+- 99.5% uptime during business hours
 
-### 4.3 Reliability
-- **NFR-8:** System shall validate all input data before processing
-- **NFR-9:** System shall handle calculation errors gracefully
-- **NFR-10:** System shall maintain 99.5% uptime during business hours
+### Maintainability
+- Java 21 best practices with records and virtual threads
+- Dependency injection for loose coupling
+- Comprehensive unit and integration tests
+- Debug logging for troubleshooting
 
-### 4.4 Maintainability
-- **NFR-11:** Code shall follow Java 21 best practices (records, virtual threads)
-- **NFR-12:** System shall use dependency injection for loose coupling
-- **NFR-13:** System shall include comprehensive unit and integration tests
-- **NFR-14:** System shall log debug information for troubleshooting
+### Scalability
+- Stateless design supports horizontal scaling
+- Externalized configuration for different environments
+- Database supports migration from H2 to production RDBMS
 
-### 4.5 Scalability
-- **NFR-15:** System shall support horizontal scaling via stateless design
-- **NFR-16:** System shall externalize configuration for environment-specific settings
-- **NFR-17:** Database shall support migration from H2 to production RDBMS
+## Data Requirements
 
-## 5. Data Requirements
+Input data includes historical P&L as list of doubles, confidence level between 0.0 and 1.0, and non-blank trade/portfolio identifiers.
 
-### 5.1 Input Data
-- Historical P&L data: List of double values representing profit/loss
-- Confidence level: Double between 0.0 and 1.0 (exclusive)
-- Trade identifiers: Non-blank strings
-- Portfolio identifiers: Non-blank strings
+Output data includes absolute VaR value, calculation metadata with method and timestamp, confidence level echo, and trade count.
 
-### 5.2 Output Data
-- VaR value: Absolute double value
-- Calculation metadata: method, timestamp, trade count
-- Confidence level: Echo of input parameter
+Audit data captures request timestamp, username, endpoint path, execution time, success status, and error messages when applicable.
 
-### 5.3 Audit Data
-- Request timestamp
-- Username
-- Endpoint path
-- Execution time (milliseconds)
-- Success/failure status
-- Error messages (if applicable)
+## Integration Requirements
 
-## 6. Integration Requirements
+The system exposes health check endpoints for monitoring and supports H2 console for development. Actuator endpoints provide operational metrics and the system supports Docker containerization.
 
-**IR-1:** System shall expose health check endpoint for monitoring
-**IR-2:** System shall support H2 console for development/testing
-**IR-3:** System shall provide actuator endpoints for operational metrics
-**IR-4:** System shall support Docker containerization
+## Constraints
 
-## 7. Constraints & Assumptions
+The system requires Java 21 runtime and Spring Boot 3.2.2 framework. It uses in-memory H2 database for development and supports only Historical Simulation methodology currently.
 
-### 7.1 Constraints
-- Java 21 runtime required
-- Spring Boot 3.2.2 framework
-- In-memory H2 database for development
-- Historical Simulation methodology only
+Historical P&L data is pre-calculated by clients. All values are assumed to be in same currency with equally spaced time periods. Users must have valid provisioned credentials.
 
-### 7.2 Assumptions
-- Historical P&L data is pre-calculated and provided by client
-- All P&L values are in same currency
-- Historical periods are equally spaced (e.g., daily)
-- Users have valid credentials provisioned
+## Future Enhancements
 
-## 8. Future Enhancements
-- Support for additional VaR methodologies
+Potential additions include support for Monte Carlo and Parametric VaR methods, real-time market data integration, multi-currency support with FX conversion, and advanced portfolio analytics like CVaR and stress testing.
+
+Other possibilities are batch calculation processing, external database integration with PostgreSQL or Oracle, distributed caching with Redis, and GraphQL API support.
